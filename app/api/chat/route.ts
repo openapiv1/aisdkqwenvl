@@ -1,9 +1,8 @@
 import Together from "together-ai";
-import { UIMessage } from "ai";
 import { killDesktop, getDesktop } from "@/lib/e2b/utils";
 import { prunedMessages } from "@/lib/utils";
 
-// Resolution configuration (not exported as it's for internal use)
+// Resolution configuration
 const resolution = { x: 1024, y: 768 };
 
 // Hardcoded API keys as required
@@ -16,237 +15,208 @@ const wait = async (seconds: number) => {
   await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 };
 
-// Function to execute computer actions
-async function executeComputerAction(action: {
-  action: string;
-  coordinate?: [number, number];
-  text?: string;
-  duration?: number;
-  scroll_direction?: string;
-  scroll_amount?: number;
-  start_coordinate?: [number, number];
-  command?: string;
-}, sandboxId: string) {
+// Computer action executor
+async function executeComputerAction(
+  action: string,
+  args: Record<string, unknown>,
+  sandboxId: string
+): Promise<string> {
   const desktop = await getDesktop(sandboxId);
 
-  switch (action.action) {
+  switch (action) {
     case "screenshot": {
       const image = await desktop.screenshot();
       const base64Data = Buffer.from(image).toString("base64");
-      return {
-        type: "image" as const,
-        data: `data:image/png;base64,${base64Data}`,
-      };
+      return `Screenshot captured successfully.\n\n![Desktop Screenshot](data:image/png;base64,${base64Data})`;
     }
     case "wait": {
-      const duration = Math.min(action.duration || 1, 2);
+      const duration = Math.min((args.duration as number) || 1, 2);
       await wait(duration);
-      return {
-        type: "text" as const,
-        text: `Waited for ${duration} seconds`,
-      };
+      return `Waited for ${duration} seconds`;
     }
     case "left_click": {
-      if (!action.coordinate) throw new Error("Coordinate required for left click");
-      const [x, y] = action.coordinate;
+      if (!args.coordinate) throw new Error("Coordinate [x, y] required for left click");
+      const [x, y] = args.coordinate as [number, number];
       await desktop.moveMouse(x, y);
       await desktop.leftClick();
-      return { type: "text" as const, text: `Left clicked at ${x}, ${y}` };
+      return `Left clicked at coordinates (${x}, ${y})`;
     }
     case "double_click": {
-      if (!action.coordinate) throw new Error("Coordinate required for double click");
-      const [x, y] = action.coordinate;
+      if (!args.coordinate) throw new Error("Coordinate [x, y] required for double click");
+      const [x, y] = args.coordinate as [number, number];
       await desktop.moveMouse(x, y);
       await desktop.doubleClick();
-      return { type: "text" as const, text: `Double clicked at ${x}, ${y}` };
+      return `Double clicked at coordinates (${x}, ${y})`;
     }
     case "right_click": {
-      if (!action.coordinate) throw new Error("Coordinate required for right click");
-      const [x, y] = action.coordinate;
+      if (!args.coordinate) throw new Error("Coordinate [x, y] required for right click");
+      const [x, y] = args.coordinate as [number, number];
       await desktop.moveMouse(x, y);
       await desktop.rightClick();
-      return { type: "text" as const, text: `Right clicked at ${x}, ${y}` };
+      return `Right clicked at coordinates (${x}, ${y})`;
     }
     case "mouse_move": {
-      if (!action.coordinate) throw new Error("Coordinate required for mouse move");
-      const [x, y] = action.coordinate;
+      if (!args.coordinate) throw new Error("Coordinate [x, y] required for mouse move");
+      const [x, y] = args.coordinate as [number, number];
       await desktop.moveMouse(x, y);
-      return { type: "text" as const, text: `Moved mouse to ${x}, ${y}` };
+      return `Moved mouse to coordinates (${x}, ${y})`;
     }
     case "type": {
-      if (!action.text) throw new Error("Text required for type action");
-      await desktop.write(action.text);
-      return { type: "text" as const, text: `Typed: ${action.text}` };
+      if (!args.text) throw new Error("Text required for type action");
+      await desktop.write(args.text as string);
+      return `Typed text: "${args.text}"`;
     }
     case "key": {
-      if (!action.text) throw new Error("Key required for key action");
-      await desktop.press(action.text === "Return" ? "enter" : action.text);
-      return { type: "text" as const, text: `Pressed key: ${action.text}` };
+      if (!args.text) throw new Error("Key required for key action");
+      const key = args.text === "Return" ? "enter" : (args.text as string);
+      await desktop.press(key);
+      return `Pressed key: ${args.text}`;
     }
     case "scroll": {
-      if (!action.scroll_direction) throw new Error("Scroll direction required");
-      if (!action.scroll_amount) throw new Error("Scroll amount required");
-      await desktop.scroll(action.scroll_direction as "up" | "down", action.scroll_amount);
-      return { type: "text" as const, text: `Scrolled ${action.scroll_direction} ${action.scroll_amount} units` };
+      if (!args.scroll_direction) throw new Error("Scroll direction (up/down) required");
+      if (!args.scroll_amount) throw new Error("Scroll amount required");
+      await desktop.scroll(args.scroll_direction as "up" | "down", args.scroll_amount as number);
+      return `Scrolled ${args.scroll_direction} by ${args.scroll_amount} units`;
     }
     case "left_click_drag": {
-      if (!action.start_coordinate || !action.coordinate) throw new Error("Coordinates required for drag");
-      const [startX, startY] = action.start_coordinate;
-      const [endX, endY] = action.coordinate;
+      if (!args.start_coordinate || !args.coordinate) {
+        throw new Error("Both start_coordinate and coordinate required for drag action");
+      }
+      const [startX, startY] = args.start_coordinate as [number, number];
+      const [endX, endY] = args.coordinate as [number, number];
       await desktop.drag([startX, startY], [endX, endY]);
-      return { type: "text" as const, text: `Dragged from ${startX},${startY} to ${endX},${endY}` };
+      return `Dragged from (${startX}, ${startY}) to (${endX}, ${endY})`;
     }
     case "bash": {
-      if (!action.command) throw new Error("Command required for bash action");
+      if (!args.command) throw new Error("Command required for bash action");
       try {
-        const result = await desktop.commands.run(action.command);
-        return { type: "text" as const, text: result.stdout || "(Command executed successfully with no output)" };
+        const result = await desktop.commands.run(args.command as string);
+        const output = result.stdout || result.stderr || "(Command executed with no output)";
+        return `Command executed: ${args.command}\n\nOutput:\n\`\`\`\n${output}\n\`\`\``;
       } catch (error) {
-        return { type: "text" as const, text: `Error executing command: ${error instanceof Error ? error.message : String(error)}` };
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return `Error executing command "${args.command}": ${errorMsg}`;
       }
     }
     default:
-      throw new Error(`Unsupported action: ${action.action}`);
+      throw new Error(`Unsupported action: ${action}`);
   }
 }
 
+function parseToolCall(content: string): { action: string; args: Record<string, unknown> } | null {
+  // Try to find JSON tool calls in the content
+  const toolCallRegex = /\{"action":\s*"([^"]+)"[^}]*\}/g;
+  const match = toolCallRegex.exec(content);
+  
+  if (match) {
+    try {
+      const toolCall = JSON.parse(match[0]);
+      return {
+        action: toolCall.action,
+        args: toolCall
+      };
+    } catch {
+      // If JSON parsing fails, return null
+      return null;
+    }
+  }
+  
+  return null;
+}
+
 export async function POST(req: Request) {
-  const { messages, sandboxId }: { messages: UIMessage[]; sandboxId: string } = await req.json();
+  const { messages, sandboxId } = await req.json();
 
   try {
-    const together = new Together({
-      apiKey: TOGETHER_API_KEY,
-    });
+    const together = new Together({ apiKey: TOGETHER_API_KEY });
 
-    // Create a readable stream for streaming responses
+    // Convert messages to Together API format
+    const formattedMessages = prunedMessages(messages).map((msg) => ({
+      role: msg.role as "system" | "user" | "assistant",
+      content: msg.content,
+    }));
+
+    // Add system message with instructions
+    const systemMessage = {
+      role: "system" as const,
+      content: `You are a helpful AI assistant that can control a virtual desktop computer. You have access to a computer with resolution ${resolution.x}x${resolution.y}.
+
+CRITICAL WORKFLOW:
+1. ALWAYS start every interaction by taking a screenshot to see the current state
+2. Analyze what you see in the screenshot
+3. Plan your actions based on the current state
+4. Execute the necessary actions step by step
+5. Take another screenshot after significant actions to verify the results
+
+Available actions (use JSON format):
+- {"action": "screenshot"} - Take a screenshot to see the current desktop state
+- {"action": "wait", "duration": 1.5} - Wait for specified seconds (max 2)
+- {"action": "left_click", "coordinate": [x, y]} - Left click at coordinates
+- {"action": "double_click", "coordinate": [x, y]} - Double click at coordinates
+- {"action": "right_click", "coordinate": [x, y]} - Right click at coordinates
+- {"action": "mouse_move", "coordinate": [x, y]} - Move mouse to coordinates
+- {"action": "type", "text": "hello world"} - Type text into focused element
+- {"action": "key", "text": "Enter"} - Press a key (Enter, Tab, Escape, etc.)
+- {"action": "scroll", "scroll_direction": "up", "scroll_amount": 3} - Scroll up/down
+- {"action": "left_click_drag", "start_coordinate": [x1, y1], "coordinate": [x2, y2]} - Drag operation
+- {"action": "bash", "command": "ls -la"} - Execute bash command
+
+ALWAYS start with taking a screenshot to understand the current state. When you want to perform an action, include the JSON action in your response.`,
+    };
+
+    const allMessages = [systemMessage, ...formattedMessages];
+
+    // Create streaming response
     const encoder = new TextEncoder();
     
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Convert messages to Together API format
-          const formattedMessages = prunedMessages(messages).map((msg) => ({
-            role: msg.role as "user" | "assistant" | "system",
-            content: msg.content,
-          }));
-
-          // Add system message
-          const systemMessage = {
-            role: "system" as const,
-            content: `You are a helpful assistant with access to a computer. You control a virtual desktop and can perform various actions.
-
-IMPORTANT: Always start every interaction with taking a screenshot to see the current state of the desktop.
-
-Available actions you can perform:
-1. screenshot - Take a screenshot of the current desktop (ALWAYS START WITH THIS)
-2. wait - Wait for a specified duration (max 2 seconds)
-3. left_click - Click at coordinates [x, y]
-4. double_click - Double click at coordinates [x, y]  
-5. right_click - Right click at coordinates [x, y]
-6. mouse_move - Move mouse to coordinates [x, y]
-7. type - Type text
-8. key - Press a key (like "Enter", "Tab", "Escape")
-9. scroll - Scroll with direction ("up"/"down") and amount
-10. left_click_drag - Drag from start_coordinate to coordinate
-11. bash - Execute bash commands
-
-Desktop resolution: ${resolution.x}x${resolution.y}
-
-When you want to perform an action, respond with a JSON object containing the action details.
-For example:
-- {"action": "screenshot"}
-- {"action": "left_click", "coordinate": [100, 200]}
-- {"action": "type", "text": "hello world"}
-- {"action": "bash", "command": "ls -la"}
-
-Always take a screenshot first to understand the current state before performing any actions.`,
-          };
-
-          const allMessages = [systemMessage, ...formattedMessages];
-
-          // Make streaming request to Together API
           const response = await together.chat.completions.create({
             model: "Qwen/Qwen2.5-VL-72B-Instruct",
             messages: allMessages,
             stream: true,
-            max_tokens: 2048,
+            max_tokens: 4000,
           });
 
-          let isCollectingAction = false;
-          let actionBuffer = "";
+          let accumulatedContent = "";
+          let actionExecuted = false;
 
           for await (const chunk of response) {
             if (chunk.choices[0]?.delta?.content) {
               const content = chunk.choices[0].delta.content;
+              accumulatedContent += content;
 
-              // Check if we're starting to collect an action (JSON object)
-              if (content.includes("{") && (content.includes('"action"') || actionBuffer)) {
-                isCollectingAction = true;
-                actionBuffer += content;
-              } else if (isCollectingAction) {
-                actionBuffer += content;
-              } else {
-                // Stream regular text content
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                  type: "text", 
-                  content 
-                })}\n\n`));
-              }
+              // Stream the text content immediately
+              controller.enqueue(encoder.encode(`0:"${content}"\n`));
 
-              // Check if we have a complete action JSON
-              if (isCollectingAction && actionBuffer.includes("}")) {
-                try {
-                  // Find the JSON object in the buffer
-                  const startIndex = actionBuffer.indexOf("{");
-                  const endIndex = actionBuffer.lastIndexOf("}") + 1;
-                  const jsonString = actionBuffer.substring(startIndex, endIndex);
-                  
-                  const action = JSON.parse(jsonString);
-                  
-                  if (action.action) {
-                    // Execute the action
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                      type: "action_start", 
-                      action: action.action,
-                      details: action
-                    })}\n\n`));
-
-                    const result = await executeComputerAction(action, sandboxId);
-                    
-                    if (result.type === "image") {
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                        type: "image", 
-                        data: result.data
-                      })}\n\n`));
-                    } else {
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                        type: "action_result", 
-                        content: result.text
-                      })}\n\n`));
-                    }
-                  }
-                } catch (parseError) {
-                  console.error("Error parsing action JSON:", parseError);
-                  // Continue collecting if JSON is incomplete
-                  if (!actionBuffer.includes("}")) {
-                    continue;
-                  }
-                }
+              // Check if we have a complete tool call
+              const toolCall = parseToolCall(accumulatedContent);
+              if (toolCall && !actionExecuted) {
+                actionExecuted = true;
                 
-                isCollectingAction = false;
-                actionBuffer = "";
+                try {
+                  // Execute the action
+                  controller.enqueue(encoder.encode(`8:[{"toolCallType":"function","toolCallId":"call_1","toolName":"computer","args":${JSON.stringify(toolCall.args)}}]\n`));
+                  
+                  const result = await executeComputerAction(toolCall.action, toolCall.args, sandboxId);
+                  
+                  // Send the result
+                  controller.enqueue(encoder.encode(`9:[{"toolCallId":"call_1","result":"${result.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"}]\n`));
+                } catch (error) {
+                  const errorMsg = error instanceof Error ? error.message : String(error);
+                  controller.enqueue(encoder.encode(`9:[{"toolCallId":"call_1","result":"Error: ${errorMsg}"}]\n`));
+                }
               }
             }
           }
 
-          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.enqueue(encoder.encode(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`));
           controller.close();
         } catch (error) {
           console.error("Streaming error:", error);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-            type: "error", 
-            content: "An error occurred with the AI service. Please try again."
-          })}\n\n`));
+          controller.enqueue(encoder.encode(`0:"Error occurred during processing. Please try again."\n`));
+          controller.enqueue(encoder.encode(`d:{"finishReason":"error","usage":{"promptTokens":0,"completionTokens":0}}\n`));
           controller.close();
         }
       },
@@ -254,7 +224,7 @@ Always take a screenshot first to understand the current state before performing
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream",
+        "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
       },
