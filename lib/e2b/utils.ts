@@ -1,7 +1,9 @@
 "use server";
 
 import { Sandbox } from "@e2b/desktop";
-import { resolution } from "./tool";
+
+// Resolution configuration
+const resolution = { x: 1024, y: 768 };
 
 export const getDesktop = async (id?: string) => {
   try {

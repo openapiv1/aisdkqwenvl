@@ -1,12 +1,13 @@
 import Together from "together-ai";
 import { UIMessage } from "ai";
 import { killDesktop, getDesktop } from "@/lib/e2b/utils";
-import { resolution } from "@/lib/e2b/tool";
 import { prunedMessages } from "@/lib/utils";
+
+// Resolution configuration (not exported as it's for internal use)
+const resolution = { x: 1024, y: 768 };
 
 // Hardcoded API keys as required
 const TOGETHER_API_KEY = "tgp_v1_JbghF6sk_yU7ks2yBrfWr3b4N183PD76xDU_K7f8GYk";
-const E2B_API_KEY = "e2b_8a5c7099485b881be08b594be7b7574440adf09c";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 300;
@@ -16,7 +17,16 @@ const wait = async (seconds: number) => {
 };
 
 // Function to execute computer actions
-async function executeComputerAction(action: any, sandboxId: string) {
+async function executeComputerAction(action: {
+  action: string;
+  coordinate?: [number, number];
+  text?: string;
+  duration?: number;
+  scroll_direction?: string;
+  scroll_amount?: number;
+  start_coordinate?: [number, number];
+  command?: string;
+}, sandboxId: string) {
   const desktop = await getDesktop(sandboxId);
 
   switch (action.action) {
@@ -162,14 +172,12 @@ Always take a screenshot first to understand the current state before performing
             max_tokens: 2048,
           });
 
-          let currentContent = "";
           let isCollectingAction = false;
           let actionBuffer = "";
 
           for await (const chunk of response) {
             if (chunk.choices[0]?.delta?.content) {
               const content = chunk.choices[0].delta.content;
-              currentContent += content;
 
               // Check if we're starting to collect an action (JSON object)
               if (content.includes("{") && (content.includes('"action"') || actionBuffer)) {
